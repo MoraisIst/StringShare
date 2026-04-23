@@ -9,9 +9,12 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 from plyer import notification
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf, ServiceListener
+from dotenv import load_dotenv
 
-
+load_dotenv()
 PORT = os.getenv("PORT")
+if not PORT:
+    raise ValueError("PORT environment variable not set")
 SERVICE = "_stringshare._tcp.local."
 HOSTNAME = socket.gethostname()
 OS = platform.system()
@@ -19,7 +22,11 @@ OS = platform.system()
 class StringShareListerer(ServiceListener):
 
     def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        print(f"Service {name} updated")
+        info = zc.get_service_info(type_, name)
+        print(f"Found: {name})")
+        print(f" IP address: {socket.inet_ntoa(info.addresses[0])}")
+        print(f" Port: {info.port}")
+        
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         print(f"Service {name} removed")
@@ -29,9 +36,16 @@ class StringShareListerer(ServiceListener):
         print(f"Service {name} added, service info: {info}")
 
 
+my_info = ServiceInfo(
+    SERVICE,
+    f"{HOSTNAME}.{SERVICE}",
+    addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
+    port= int(PORT),
+)
+
 zeroconf = Zeroconf()
-listener = StringShareListerer()
-browser = ServiceBrowser(zeroconf, "_stringshare._tcp.local.", listener)
+zeroconf.register_service(my_info)
+browser = ServiceBrowser(zeroconf, "_stringshare._tcp.local.", StringShareListerer())
 
 try:
     input("Press enter to exit...\n\n")
