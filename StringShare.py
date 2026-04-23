@@ -1,4 +1,3 @@
-
 import platform
 import socket
 import threading
@@ -19,14 +18,13 @@ SERVICE = "_stringshare._tcp.local."
 HOSTNAME = socket.gethostname()
 OS = platform.system()
 
-class StringShareListerer(ServiceListener):
 
+class StringShareListerer(ServiceListener):
     def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         info = zc.get_service_info(type_, name)
         print(f"Found: {name})")
         print(f" IP address: {socket.inet_ntoa(info.addresses[0])}")
         print(f" Port: {info.port}")
-        
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         print(f"Service {name} removed")
@@ -40,7 +38,7 @@ my_info = ServiceInfo(
     SERVICE,
     f"{HOSTNAME}.{SERVICE}",
     addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
-    port= int(PORT),
+    port=int(PORT),
 )
 
 zeroconf = Zeroconf()
