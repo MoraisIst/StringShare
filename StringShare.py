@@ -13,20 +13,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 PORT = os.getenv("PORT")
-if not PORT:
-    raise ValueError("PORT environment variable not set")
+print(type(PORT),PORT)
 SERVICE = "_stringshare._tcp.local."
 HOSTNAME = socket.gethostname()
 OS = platform.system()
 
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip = s.getsockname()[0]
+    s.close()
+    return ip
+
+
 class StringShareListerer(ServiceListener):
 
     def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        info = zc.get_service_info(type_, name)
-        print(f"Found: {name})")
-        print(f" IP address: {socket.inet_ntoa(info.addresses[0])}")
-        print(f" Port: {info.port}")
-        
+        print(f"Service {name} updated")
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         print(f"Service {name} removed")
@@ -36,16 +40,19 @@ class StringShareListerer(ServiceListener):
         print(f"Service {name} added, service info: {info}")
 
 
+
 my_info = ServiceInfo(
     SERVICE,
     f"{HOSTNAME}.{SERVICE}",
-    addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
-    port= int(PORT),
+    addresses = [socket.inet_aton(get_local_ip())],
+    port = int(PORT),
 )
 
+print(f"{my_info}")
 zeroconf = Zeroconf()
 zeroconf.register_service(my_info)
-browser = ServiceBrowser(zeroconf, "_stringshare._tcp.local.", StringShareListerer())
+listener = StringShareListerer()
+browser = ServiceBrowser(zeroconf, "_stringshare._tcp.local.", listener)
 
 try:
     input("Press enter to exit...\n\n")
