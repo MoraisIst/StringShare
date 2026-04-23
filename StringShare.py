@@ -12,7 +12,7 @@ from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf, ServiceListener
 
 
 PORT = os.getenv("PORT")
-SERVICE = "_stringshare._tcp.local"
+SERVICE = "_stringshare._tcp.local."
 HOSTNAME = socket.gethostname()
 OS = platform.system()
 
@@ -31,7 +31,7 @@ class StringShareListerer(ServiceListener):
 
 zeroconf = Zeroconf()
 listener = StringShareListerer()
-browser = ServiceBrowser(zeroconf, "_http._tcp.local.", listener)
+browser = ServiceBrowser(zeroconf, "_stringshare._tcp.local.", listener)
 
 try:
     input("Press enter to exit...\n\n")
