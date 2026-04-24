@@ -1,9 +1,8 @@
 import platform
 import socket
 import threading
-import time
+import plyer
 import os
-import pyperclip
 import websockets
 import asyncio
 import json
@@ -12,6 +11,7 @@ from plyer import notification
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf, ServiceListener
 from dotenv import load_dotenv
 
+
 load_dotenv()
 PORT = os.getenv("PORT")
 print(type(PORT), PORT)
@@ -19,25 +19,36 @@ SERVICE = "_stringshare._tcp.local."
 HOSTNAME = socket.gethostname()
 OS = platform.system()
 
+peers: dict[str, str] = {}
 
-class StringShareListerer(ServiceListener):
+
+class StringShareListerer:
     def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        print(f"Service {name} updated")
+        self.add_service(zc, type_, name)
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        print(f"Service {name} removed")
+        peer_name = name.removesuffix(f".{type_}")
+        if peer_name in peers:
+            del peers[peer_name]
+        print(f"Peer {peer_name} removed")
 
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         info = zc.get_service_info(type_, name)
-        print(f"Service {name} added, service info: {info}")
+        peer_name = name.removesuffix(f".{type_}")
+        if peer_name == HOSTNAME:
+            return
+        ip = socket.inet_ntoa(info.addresses[0])
+        peers[peer_name] = ip
+        print(f"Peer {peer_name} with IP {ip} added")
 
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 80))
-    ip = s.getsockname()[0]
-    s.close()
-    return ip
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    finally:
+        s.close()
 
 
 async def handle_connection(websocket):
@@ -47,8 +58,16 @@ async def handle_connection(websocket):
         async for message in websocket:
             data = json.loads(message)
             print(f"Received: {data['text']}")
+            notification.notify(
+                title="StringShare",
+                message=data["text"],
+                app_name="StringShare",
+                timeout=5,
+            )
     except ConnectionClosed:
         print(f"Connection closed by {peer[0]}")
+    except Exception as e:
+        print(f"Error handling connection from {peer[0]}: {e}")
 
 
 async def start_server():
@@ -63,6 +82,12 @@ async def send_string(ip, text):
         async with websockets.connect(url) as websocket:
             await websocket.send(json.dumps({"text": text}))
             print(f"Sent: {text} to {url}")
+            notification.notify(
+                title="StringShare",
+                message=f"Sent: {text} to {ip}",
+                app_name="StringShare",
+                timeout=5,
+            )
     except Exception as e:
         print(f"Failed to send to {url}: {e}")
 
@@ -84,16 +109,56 @@ zeroconf.register_service(my_info)
 listener = StringShareListerer()
 browser = ServiceBrowser(zeroconf, "_stringshare._tcp.local.", listener)
 
-try:
-    server_thread = threading.Thread(target=run_server, daemon=True)
+
+def main():
+    local_ip = get_local_ip()
+    print(f"Hostname: {HOSTNAME}")
+    print(f"Local IP: {local_ip}")
+    print(f"PORT: {PORT}")
+    print(f"Service: {SERVICE}")
+    print()
+
+    zc = Zeroconf()
+
+    my_service_info = ServiceInfo(
+        SERVICE,
+        f"{HOSTNAME}.{SERVICE}",
+        addresses=[socket.inet_aton(local_ip)],
+        port=int(PORT),
+    )
+
+    zc.register_service(my_service_info)
+    print(f"Advertised service: {my_service_info}")
+    print(f"Browsing for services of type {SERVICE}...")
+
+    browser = ServiceBrowser(zc, SERVICE, StringShareListerer())
+
+    # Create a single event loop and keep it alive
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Run the server in a separate thread
+    server_thread = threading.Thread(
+        target=lambda: loop.run_until_complete(start_server()), daemon=True
+    )
     server_thread.start()
-    while True:
-        ip = input("Enter the IP address to send to (or 'exit' to quit): ")
-        if ip.lower() == "exit":
-            break
-        text = input("Enter the text to send: ")
-        asyncio.run(send_string(ip, text))
-except KeyboardInterrupt:
-    print("Shutting down...")
-finally:
-    zeroconf.close()
+    print("Server started in background thread")
+
+    try:
+        while True:
+            ip = input("Enter the IP address to send to (or 'exit' to quit): ")
+            if ip.lower() == "exit":
+                break
+            text = input("Enter the text to send: ")
+            asyncio.run_coroutine_threadsafe(send_string(ip, text), loop)
+    except KeyboardInterrupt:
+        print("Shutting down...")
+    finally:
+        zc.unregister_service(my_service_info)
+        zc.close()
+        loop.call_soon_threadsafe(loop.stop)
+        print("Cleaned up Zeroconf resources.")
+
+
+if __name__ == "__main__":
+    main()
